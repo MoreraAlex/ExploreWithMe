@@ -1,12 +1,12 @@
 package ru.practicum.ewm.stats.mapper;
 
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import ru.practicum.ewm.stats.dto.EndpointHitDto;
 import ru.practicum.ewm.stats.entity.EndpointHit;
 
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class EndpointHitMapper {
-
-    private EndpointHitMapper() {
-    }
 
     public static EndpointHit toEntity(EndpointHitDto endpointHitDto) {
         return EndpointHit.builder()
