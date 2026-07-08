@@ -65,7 +65,7 @@ public class StatsFacade {
         return eventId -> "/events/" + eventId;
     }
 
-    private String getClientIp(HttpServletRequest request) {
+    public String getClientIp(HttpServletRequest request) {
         String forwardedFor = request.getHeader("X-Forwarded-For");
         if (forwardedFor == null || forwardedFor.isBlank()) {
             return request.getRemoteAddr();

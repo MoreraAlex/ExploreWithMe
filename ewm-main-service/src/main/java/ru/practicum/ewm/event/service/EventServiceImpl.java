@@ -24,9 +24,11 @@ import ru.practicum.ewm.event.model.AdminStateAction;
 import ru.practicum.ewm.event.model.Event;
 import ru.practicum.ewm.event.model.EventSort;
 import ru.practicum.ewm.event.model.EventState;
+import ru.practicum.ewm.event.model.EventView;
 import ru.practicum.ewm.event.model.UserStateAction;
 import ru.practicum.ewm.event.repository.EventRepository;
 import ru.practicum.ewm.event.repository.EventSpecifications;
+import ru.practicum.ewm.event.repository.EventViewRepository;
 import ru.practicum.ewm.exception.BadRequestException;
 import ru.practicum.ewm.exception.ForbiddenException;
 import ru.practicum.ewm.exception.NotFoundException;
@@ -43,6 +45,7 @@ public class EventServiceImpl implements EventService {
     private final EventRepository eventRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
+    private final EventViewRepository eventViewRepository;
     private final ParticipationRequestService requestService;
     private final StatsFacade statsFacade;
 
@@ -164,7 +167,7 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findWithCategoryAndInitiatorByIdAndState(eventId, EventState.PUBLISHED)
                 .orElseThrow(() -> new NotFoundException("Event with id=" + eventId + " was not found"));
         statsFacade.saveHit(request);
-        event.setViews(getLocalViews(event) + 1);
+        addUniqueView(event, request);
         return toFullDto(event);
     }
 
@@ -273,6 +276,17 @@ public class EventServiceImpl implements EventService {
 
     private long getLocalViews(Event event) {
         return event.getViews() == null ? 0L : event.getViews();
+    }
+
+    private void addUniqueView(Event event, HttpServletRequest request) {
+        String ip = statsFacade.getClientIp(request);
+        if (!eventViewRepository.existsByEventIdAndIp(event.getId(), ip)) {
+            eventViewRepository.save(EventView.builder()
+                    .event(event)
+                    .ip(ip)
+                    .build());
+            event.setViews(eventViewRepository.countByEventId(event.getId()));
+        }
     }
 
     private Map<String, Long> loadViews(List<Event> events) {
