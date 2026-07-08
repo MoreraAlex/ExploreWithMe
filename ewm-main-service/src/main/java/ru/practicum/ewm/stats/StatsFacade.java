@@ -27,7 +27,7 @@ public class StatsFacade {
             statsClient.hit(EndpointHitDto.builder()
                     .app(APP)
                     .uri(request.getRequestURI())
-                    .ip(request.getRemoteAddr())
+                    .ip(getClientIp(request))
                     .timestamp(LocalDateTime.now())
                     .build());
         } catch (RuntimeException exception) {
@@ -63,5 +63,13 @@ public class StatsFacade {
 
     public static Function<Long, String> eventUri() {
         return eventId -> "/events/" + eventId;
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor == null || forwardedFor.isBlank()) {
+            return request.getRemoteAddr();
+        }
+        return forwardedFor.split(",")[0].trim();
     }
 }
