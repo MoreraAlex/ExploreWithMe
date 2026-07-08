@@ -30,6 +30,7 @@ public final class EventMapper {
                 .requestModeration(dto.getRequestModeration() == null || dto.getRequestModeration())
                 .state(EventState.PENDING)
                 .title(dto.getTitle())
+                .views(0L)
                 .build();
     }
 

@@ -159,10 +159,12 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    @Transactional
     public EventFullDto getPublicEvent(Long eventId, HttpServletRequest request) {
         Event event = eventRepository.findWithCategoryAndInitiatorByIdAndState(eventId, EventState.PUBLISHED)
                 .orElseThrow(() -> new NotFoundException("Event with id=" + eventId + " was not found"));
         statsFacade.saveHit(request);
+        event.setViews(getLocalViews(event) + 1);
         return toFullDto(event);
     }
 
@@ -246,7 +248,7 @@ public class EventServiceImpl implements EventService {
                 .map(event -> EventMapper.toShortDto(
                         event,
                         confirmed.getOrDefault(event.getId(), 0L),
-                        views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        Math.max(getLocalViews(event), views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L))
                 ))
                 .toList();
     }
@@ -258,15 +260,19 @@ public class EventServiceImpl implements EventService {
                 .map(event -> EventMapper.toFullDto(
                         event,
                         confirmed.getOrDefault(event.getId(), 0L),
-                        views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        Math.max(getLocalViews(event), views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L))
                 ))
                 .toList();
     }
 
     private EventFullDto toFullDto(Event event) {
         long confirmed = requestService.getConfirmedCounts(List.of(event.getId())).getOrDefault(event.getId(), 0L);
-        long views = statsFacade.getViews(StatsFacade.eventUri().apply(event.getId()));
+        long views = Math.max(getLocalViews(event), statsFacade.getViews(StatsFacade.eventUri().apply(event.getId())));
         return EventMapper.toFullDto(event, confirmed, views);
+    }
+
+    private long getLocalViews(Event event) {
+        return event.getViews() == null ? 0L : event.getViews();
     }
 
     private Map<String, Long> loadViews(List<Event> events) {
