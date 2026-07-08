@@ -87,7 +87,7 @@ public class EventServiceImpl implements EventService {
             throw new ForbiddenException("Only pending or canceled events can be changed");
         }
         if (dto.getEventDate() != null && dto.getEventDate().isBefore(LocalDateTime.now().plusHours(2))) {
-            throw new ForbiddenException("Field: eventDate. Error: must be at least two hours later");
+            throw new BadRequestException("Field: eventDate. Error: must be at least two hours later");
         }
         applyUserUpdate(event, dto);
         return toFullDto(event);
@@ -162,9 +162,8 @@ public class EventServiceImpl implements EventService {
     public EventFullDto getPublicEvent(Long eventId, HttpServletRequest request) {
         Event event = eventRepository.findWithCategoryAndInitiatorByIdAndState(eventId, EventState.PUBLISHED)
                 .orElseThrow(() -> new NotFoundException("Event with id=" + eventId + " was not found"));
-        EventFullDto dto = toFullDto(event);
         statsFacade.saveHit(request);
-        return dto;
+        return toFullDto(event);
     }
 
     private void applyUserUpdate(Event event, UpdateEventUserRequest dto) {
@@ -178,6 +177,9 @@ public class EventServiceImpl implements EventService {
     }
 
     private void applyAdminUpdate(Event event, UpdateEventAdminRequest dto) {
+        if (dto.getEventDate() != null && dto.getEventDate().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("Field: eventDate. Error: must contain a date that has not yet occurred");
+        }
         applyCommonUpdate(event, dto.getAnnotation(), dto.getCategory(), dto.getDescription(), dto.getEventDate(),
                 dto.getLocation(), dto.getPaid(), dto.getParticipantLimit(), dto.getRequestModeration(), dto.getTitle());
         if (dto.getStateAction() == AdminStateAction.PUBLISH_EVENT) {

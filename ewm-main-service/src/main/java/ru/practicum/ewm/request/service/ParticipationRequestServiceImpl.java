@@ -1,6 +1,7 @@
 package ru.practicum.ewm.request.service;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -62,7 +63,7 @@ public class ParticipationRequestServiceImpl implements ParticipationRequestServ
                 ? RequestStatus.CONFIRMED
                 : RequestStatus.PENDING;
         ParticipationRequest request = ParticipationRequest.builder()
-                .created(LocalDateTime.now())
+                .created(LocalDateTime.now().truncatedTo(ChronoUnit.MICROS))
                 .event(event)
                 .requester(requester)
                 .status(status)
