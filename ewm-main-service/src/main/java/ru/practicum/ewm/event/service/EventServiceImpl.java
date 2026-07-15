@@ -2,7 +2,9 @@ package ru.practicum.ewm.event.service;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,9 @@ import ru.practicum.ewm.category.repository.CategoryRepository;
 import ru.practicum.ewm.common.OffsetPageRequest;
 import ru.practicum.ewm.common.Validation;
 import ru.practicum.ewm.event.dto.EventFullDto;
+import ru.practicum.ewm.event.dto.EventRatingDto;
+import ru.practicum.ewm.event.dto.EventReactionDto;
+import ru.practicum.ewm.event.dto.EventReactionRequest;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
 import ru.practicum.ewm.event.dto.UpdateEventAdminRequest;
@@ -22,14 +27,18 @@ import ru.practicum.ewm.event.dto.UpdateEventUserRequest;
 import ru.practicum.ewm.event.mapper.EventMapper;
 import ru.practicum.ewm.event.model.AdminStateAction;
 import ru.practicum.ewm.event.model.Event;
+import ru.practicum.ewm.event.model.EventReaction;
 import ru.practicum.ewm.event.model.EventSort;
 import ru.practicum.ewm.event.model.EventState;
 import ru.practicum.ewm.event.model.EventView;
 import ru.practicum.ewm.event.model.UserStateAction;
+import ru.practicum.ewm.event.repository.EventReactionRepository;
+import ru.practicum.ewm.event.repository.EventReactionStats;
 import ru.practicum.ewm.event.repository.EventRepository;
 import ru.practicum.ewm.event.repository.EventSpecifications;
 import ru.practicum.ewm.event.repository.EventViewRepository;
 import ru.practicum.ewm.exception.BadRequestException;
+import ru.practicum.ewm.exception.ConflictException;
 import ru.practicum.ewm.exception.ForbiddenException;
 import ru.practicum.ewm.exception.NotFoundException;
 import ru.practicum.ewm.request.service.ParticipationRequestService;
@@ -46,6 +55,7 @@ public class EventServiceImpl implements EventService {
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final EventViewRepository eventViewRepository;
+    private final EventReactionRepository eventReactionRepository;
     private final ParticipationRequestService requestService;
     private final StatsFacade statsFacade;
 
@@ -143,14 +153,30 @@ public class EventServiceImpl implements EventService {
                 .and(EventSpecifications.categoriesIn(categories))
                 .and(EventSpecifications.paid(paid))
                 .and(EventSpecifications.eventDateBetween(start, rangeEnd));
+        if (sort == EventSort.RATING) {
+            List<Event> events = eventRepository.findAll(specification);
+            List<EventShortDto> dtos = toShortDtos(events);
+            if (Boolean.TRUE.equals(onlyAvailable)) {
+                dtos = filterAvailable(dtos, events);
+            }
+            statsFacade.saveHit(request);
+            return dtos.stream()
+                    .sorted(Comparator.comparing(EventShortDto::getRating).reversed()
+                            .thenComparing(EventShortDto::getLikes, Comparator.reverseOrder())
+                            .thenComparing(EventShortDto::getEventDate)
+                            .thenComparing(EventShortDto::getId))
+                    .skip(from)
+                    .limit(size)
+                    .toList();
+        }
         Sort dbSort = sort == EventSort.EVENT_DATE ? Sort.by("eventDate").ascending() : Sort.unsorted();
-        List<Event> events = eventRepository.findAll(specification, new OffsetPageRequest(from, size, dbSort)).getContent();
+        List<Event> events = eventRepository.findAll(
+                specification,
+                new OffsetPageRequest(from, size, dbSort)
+        ).getContent();
         List<EventShortDto> dtos = toShortDtos(events);
         if (Boolean.TRUE.equals(onlyAvailable)) {
-            dtos = dtos.stream()
-                    .filter(dto -> dto.getConfirmedRequests() < findById(events, dto.getId()).getParticipantLimit()
-                            || findById(events, dto.getId()).getParticipantLimit() == 0)
-                    .toList();
+            dtos = filterAvailable(dtos, events);
         }
         if (sort == EventSort.VIEWS) {
             dtos = dtos.stream()
@@ -169,6 +195,47 @@ public class EventServiceImpl implements EventService {
         statsFacade.saveHit(request);
         addUniqueView(event, request);
         return toFullDto(event);
+    }
+
+    @Override
+    @Transactional
+    public EventReactionDto setReaction(Long userId, Long eventId, EventReactionRequest request) {
+        getUser(userId);
+        Event event = getEvent(eventId);
+        validateCanRate(userId, event);
+        eventReactionRepository.upsert(eventId, userId, request.getReaction().name(), LocalDateTime.now());
+        return eventReactionRepository.findByEventIdAndUserId(eventId, userId)
+                .map(this::toReactionDto)
+                .orElseThrow(() -> new NotFoundException("Reaction for userId=" + userId
+                        + " and eventId=" + eventId + " was not found"));
+    }
+
+    @Override
+    @Transactional
+    public void deleteReaction(Long userId, Long eventId) {
+        getUser(userId);
+        getEvent(eventId);
+        eventReactionRepository.deleteByEventIdAndUserId(eventId, userId);
+    }
+
+    @Override
+    public EventReactionDto getReaction(Long userId, Long eventId) {
+        getUser(userId);
+        getEvent(eventId);
+        return eventReactionRepository.findByEventIdAndUserId(eventId, userId)
+                .map(this::toReactionDto)
+                .orElseThrow(() -> new NotFoundException("Reaction for userId=" + userId
+                        + " and eventId=" + eventId + " was not found"));
+    }
+
+    @Override
+    public EventRatingDto getPublicRating(Long eventId) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> new NotFoundException("Event with id=" + eventId + " was not found"));
+        if (event.getState() != EventState.PUBLISHED) {
+            throw new ConflictException("Only published events can be rated");
+        }
+        return ratingByEventIds(List.of(eventId)).get(eventId);
     }
 
     private void applyUserUpdate(Event event, UpdateEventUserRequest dto) {
@@ -247,11 +314,16 @@ public class EventServiceImpl implements EventService {
     private List<EventShortDto> toShortDtos(List<Event> events) {
         Map<Long, Long> confirmed = requestService.getConfirmedCounts(ids(events));
         Map<String, Long> views = loadViews(events);
+        Map<Long, EventRatingDto> ratings = ratingByEventIds(ids(events));
         return events.stream()
                 .map(event -> EventMapper.toShortDto(
                         event,
                         confirmed.getOrDefault(event.getId(), 0L),
-                        Math.max(getLocalViews(event), views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L))
+                        Math.max(
+                                getLocalViews(event),
+                                views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        ),
+                        ratings.get(event.getId())
                 ))
                 .toList();
     }
@@ -259,11 +331,16 @@ public class EventServiceImpl implements EventService {
     private List<EventFullDto> toFullDtos(List<Event> events) {
         Map<Long, Long> confirmed = requestService.getConfirmedCounts(ids(events));
         Map<String, Long> views = loadViews(events);
+        Map<Long, EventRatingDto> ratings = ratingByEventIds(ids(events));
         return events.stream()
                 .map(event -> EventMapper.toFullDto(
                         event,
                         confirmed.getOrDefault(event.getId(), 0L),
-                        Math.max(getLocalViews(event), views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L))
+                        Math.max(
+                                getLocalViews(event),
+                                views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        ),
+                        ratings.get(event.getId())
                 ))
                 .toList();
     }
@@ -271,7 +348,61 @@ public class EventServiceImpl implements EventService {
     private EventFullDto toFullDto(Event event) {
         long confirmed = requestService.getConfirmedCounts(List.of(event.getId())).getOrDefault(event.getId(), 0L);
         long views = Math.max(getLocalViews(event), statsFacade.getViews(StatsFacade.eventUri().apply(event.getId())));
-        return EventMapper.toFullDto(event, confirmed, views);
+        return EventMapper.toFullDto(event, confirmed, views, ratingByEventIds(List.of(event.getId())).get(event.getId()));
+    }
+
+    private List<EventShortDto> filterAvailable(List<EventShortDto> dtos, List<Event> events) {
+        return dtos.stream()
+                .filter(dto -> dto.getConfirmedRequests() < findById(events, dto.getId()).getParticipantLimit()
+                        || findById(events, dto.getId()).getParticipantLimit() == 0)
+                .toList();
+    }
+
+    private Map<Long, EventRatingDto> ratingByEventIds(List<Long> eventIds) {
+        if (eventIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, EventRatingDto> ratings = new HashMap<>();
+        eventIds.forEach(eventId -> ratings.put(eventId, emptyRating(eventId)));
+        for (EventReactionStats stats : eventReactionRepository.findStatsByEventIds(eventIds)) {
+            long likes = stats.getLikes() == null ? 0L : stats.getLikes();
+            long dislikes = stats.getDislikes() == null ? 0L : stats.getDislikes();
+            ratings.put(stats.getEventId(), EventRatingDto.builder()
+                    .eventId(stats.getEventId())
+                    .likes(likes)
+                    .dislikes(dislikes)
+                    .rating(likes - dislikes)
+                    .build());
+        }
+        return ratings;
+    }
+
+    private EventRatingDto emptyRating(Long eventId) {
+        return EventRatingDto.builder()
+                .eventId(eventId)
+                .likes(0L)
+                .dislikes(0L)
+                .rating(0L)
+                .build();
+    }
+
+    private void validateCanRate(Long userId, Event event) {
+        if (event.getState() != EventState.PUBLISHED) {
+            throw new ConflictException("Only published events can be rated");
+        }
+        if (event.getInitiator().getId().equals(userId)) {
+            throw new ConflictException("Event initiator cannot rate their own event");
+        }
+    }
+
+    private EventReactionDto toReactionDto(EventReaction reaction) {
+        return EventReactionDto.builder()
+                .eventId(reaction.getEvent().getId())
+                .userId(reaction.getUser().getId())
+                .reaction(reaction.getReactionType())
+                .created(reaction.getCreated())
+                .updated(reaction.getUpdated())
+                .build();
     }
 
     private long getLocalViews(Event event) {
@@ -311,6 +442,11 @@ public class EventServiceImpl implements EventService {
     private User getUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User with id=" + userId + " was not found"));
+    }
+
+    private Event getEvent(Long eventId) {
+        return eventRepository.findWithCategoryAndInitiatorById(eventId)
+                .orElseThrow(() -> new NotFoundException("Event with id=" + eventId + " was not found"));
     }
 
     private Category getCategory(Long categoryId) {

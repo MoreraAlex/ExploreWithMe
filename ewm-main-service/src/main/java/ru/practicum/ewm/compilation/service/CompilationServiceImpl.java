@@ -1,5 +1,6 @@
 package ru.practicum.ewm.compilation.service;
 
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -17,8 +18,11 @@ import ru.practicum.ewm.compilation.dto.UpdateCompilationRequest;
 import ru.practicum.ewm.compilation.mapper.CompilationMapper;
 import ru.practicum.ewm.compilation.model.Compilation;
 import ru.practicum.ewm.compilation.repository.CompilationRepository;
+import ru.practicum.ewm.event.dto.EventRatingDto;
 import ru.practicum.ewm.event.mapper.EventMapper;
 import ru.practicum.ewm.event.model.Event;
+import ru.practicum.ewm.event.repository.EventReactionRepository;
+import ru.practicum.ewm.event.repository.EventReactionStats;
 import ru.practicum.ewm.event.repository.EventRepository;
 import ru.practicum.ewm.exception.NotFoundException;
 import ru.practicum.ewm.request.service.ParticipationRequestService;
@@ -31,6 +35,7 @@ public class CompilationServiceImpl implements CompilationService {
 
     private final CompilationRepository compilationRepository;
     private final EventRepository eventRepository;
+    private final EventReactionRepository eventReactionRepository;
     private final ParticipationRequestService requestService;
     private final StatsFacade statsFacade;
 
@@ -104,12 +109,41 @@ public class CompilationServiceImpl implements CompilationService {
         Map<String, Long> views = statsFacade.getViews(eventIds.stream()
                 .map(StatsFacade.eventUri())
                 .toList());
+        Map<Long, EventRatingDto> ratings = ratingByEventIds(eventIds);
         return CompilationMapper.toDto(compilation, events.stream()
                 .map(event -> EventMapper.toShortDto(
                         event,
                         confirmed.getOrDefault(event.getId(), 0L),
-                        views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        Math.max(
+                                event.getViews() == null ? 0L : event.getViews(),
+                                views.getOrDefault(StatsFacade.eventUri().apply(event.getId()), 0L)
+                        ),
+                        ratings.get(event.getId())
                 ))
                 .collect(Collectors.toCollection(LinkedHashSet::new)));
+    }
+
+    private Map<Long, EventRatingDto> ratingByEventIds(List<Long> eventIds) {
+        Map<Long, EventRatingDto> ratings = new HashMap<>();
+        eventIds.forEach(eventId -> ratings.put(eventId, EventRatingDto.builder()
+                .eventId(eventId)
+                .likes(0L)
+                .dislikes(0L)
+                .rating(0L)
+                .build()));
+        if (eventIds.isEmpty()) {
+            return ratings;
+        }
+        for (EventReactionStats stats : eventReactionRepository.findStatsByEventIds(eventIds)) {
+            long likes = stats.getLikes() == null ? 0L : stats.getLikes();
+            long dislikes = stats.getDislikes() == null ? 0L : stats.getDislikes();
+            ratings.put(stats.getEventId(), EventRatingDto.builder()
+                    .eventId(stats.getEventId())
+                    .likes(likes)
+                    .dislikes(dislikes)
+                    .rating(likes - dislikes)
+                    .build());
+        }
+        return ratings;
     }
 }
