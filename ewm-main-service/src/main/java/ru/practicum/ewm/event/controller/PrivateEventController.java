@@ -7,15 +7,19 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import ru.practicum.ewm.event.dto.EventFullDto;
+import ru.practicum.ewm.event.dto.EventReactionDto;
+import ru.practicum.ewm.event.dto.EventReactionRequest;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
 import ru.practicum.ewm.event.dto.UpdateEventUserRequest;
@@ -56,6 +60,24 @@ public class PrivateEventController {
                                @PathVariable Long eventId,
                                @Valid @RequestBody UpdateEventUserRequest dto) {
         return eventService.updateUserEvent(userId, eventId, dto);
+    }
+
+    @PutMapping("/users/{userId}/events/{eventId}/reaction")
+    public EventReactionDto setReaction(@PathVariable Long userId,
+                                        @PathVariable Long eventId,
+                                        @Valid @RequestBody EventReactionRequest request) {
+        return eventService.setReaction(userId, eventId, request);
+    }
+
+    @DeleteMapping("/users/{userId}/events/{eventId}/reaction")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteReaction(@PathVariable Long userId, @PathVariable Long eventId) {
+        eventService.deleteReaction(userId, eventId);
+    }
+
+    @GetMapping("/users/{userId}/events/{eventId}/reaction")
+    public EventReactionDto getReaction(@PathVariable Long userId, @PathVariable Long eventId) {
+        return eventService.getReaction(userId, eventId);
     }
 
     @GetMapping("/users/{userId}/events/{eventId}/requests")

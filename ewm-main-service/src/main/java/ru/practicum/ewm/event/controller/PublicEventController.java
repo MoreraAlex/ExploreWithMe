@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.practicum.ewm.common.DateTimePattern;
 import ru.practicum.ewm.event.dto.EventFullDto;
+import ru.practicum.ewm.event.dto.EventRatingDto;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.model.EventSort;
 import ru.practicum.ewm.event.service.EventService;
@@ -57,5 +58,10 @@ public class PublicEventController {
     @GetMapping("/events/{id}")
     public EventFullDto getEvent(@PathVariable Long id, HttpServletRequest request) {
         return eventService.getPublicEvent(id, request);
+    }
+
+    @GetMapping("/events/{id}/rating")
+    public EventRatingDto getRating(@PathVariable Long id) {
+        return eventService.getPublicRating(id);
     }
 }

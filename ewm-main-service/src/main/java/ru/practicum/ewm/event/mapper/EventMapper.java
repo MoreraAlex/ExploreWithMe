@@ -5,6 +5,7 @@ import lombok.NoArgsConstructor;
 import ru.practicum.ewm.category.mapper.CategoryMapper;
 import ru.practicum.ewm.category.model.Category;
 import ru.practicum.ewm.event.dto.EventFullDto;
+import ru.practicum.ewm.event.dto.EventRatingDto;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.LocationDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
@@ -34,7 +35,7 @@ public final class EventMapper {
                 .build();
     }
 
-    public static EventShortDto toShortDto(Event event, long confirmedRequests, long views) {
+    public static EventShortDto toShortDto(Event event, long confirmedRequests, long views, EventRatingDto rating) {
         return EventShortDto.builder()
                 .id(event.getId())
                 .annotation(event.getAnnotation())
@@ -45,10 +46,13 @@ public final class EventMapper {
                 .paid(event.getPaid())
                 .title(event.getTitle())
                 .views(views)
+                .likes(rating.getLikes())
+                .dislikes(rating.getDislikes())
+                .rating(rating.getRating())
                 .build();
     }
 
-    public static EventFullDto toFullDto(Event event, long confirmedRequests, long views) {
+    public static EventFullDto toFullDto(Event event, long confirmedRequests, long views, EventRatingDto rating) {
         return EventFullDto.builder()
                 .id(event.getId())
                 .annotation(event.getAnnotation())
@@ -66,6 +70,9 @@ public final class EventMapper {
                 .state(event.getState())
                 .title(event.getTitle())
                 .views(views)
+                .likes(rating.getLikes())
+                .dislikes(rating.getDislikes())
+                .rating(rating.getRating())
                 .build();
     }
 

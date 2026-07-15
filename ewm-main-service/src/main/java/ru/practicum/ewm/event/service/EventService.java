@@ -4,6 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
 import ru.practicum.ewm.event.dto.EventFullDto;
+import ru.practicum.ewm.event.dto.EventRatingDto;
+import ru.practicum.ewm.event.dto.EventReactionDto;
+import ru.practicum.ewm.event.dto.EventReactionRequest;
 import ru.practicum.ewm.event.dto.EventShortDto;
 import ru.practicum.ewm.event.dto.NewEventDto;
 import ru.practicum.ewm.event.dto.UpdateEventAdminRequest;
@@ -43,4 +46,12 @@ public interface EventService {
                                         HttpServletRequest request);
 
     EventFullDto getPublicEvent(Long eventId, HttpServletRequest request);
+
+    EventReactionDto setReaction(Long userId, Long eventId, EventReactionRequest request);
+
+    void deleteReaction(Long userId, Long eventId);
+
+    EventReactionDto getReaction(Long userId, Long eventId);
+
+    EventRatingDto getPublicRating(Long eventId);
 }
